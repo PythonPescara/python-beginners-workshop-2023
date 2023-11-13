@@ -3,6 +3,7 @@ import mediapipe as mp
 import cv2
 import requests
 import ipywidgets as widgets
+import io
 
 ######################################
 
@@ -24,6 +25,7 @@ def download_dataset():
   with open('./gesture_train.csv', 'wb') as f:
       f.write(resp.content)
 
+download_dataset()
 ########################################
 
 # Define default camera intrinsic
@@ -36,6 +38,7 @@ intrin_default = {
     'cy': img_height*0.5,
     'width': img_width,
 }
+#########################################
 
 class GestureRecognition:
   import numpy as np
@@ -65,7 +68,7 @@ class GestureRecognition:
     idx = int(results[0][0]) # Index of class label
 
     return list(self.gesture)[idx] # Return name of class label
-
+#####################################
 
 class MediaPipeHand:
   def __init__(self, static_image_mode=True, max_num_hands=1,
@@ -269,5 +272,94 @@ class MediaPipeHand:
     param = self.result_to_param(result, img)
 
     return param
+
+##########################################
+
+try:
+  from  google.colab.output import eval_js
+  colab = True
+except:
+  colab = False
+
+if colab:
+  from IPython.display import display, Javascript
+  from  google.colab.output import eval_js
+  from base64 import b64decode
+  from PIL import Image as PIL_Image
+
+  def take_photo(quality=0.8):
+    js = Javascript('''
+    async function takePhoto(quality) {
+      const div = document.createElement('div');
+      const capture = document.createElement('button');
+      capture.textContent = 'Capture';
+      div.appendChild(capture);
+
+      const video = document.createElement('video');
+      video.style.display = 'block';
+      const stream = await navigator.mediaDevices.getUserMedia({video: true});
+
+      document.body.appendChild(div);
+      div.appendChild(video);
+      video.srcObject = stream;
+      await video.play();
+
+      // Resize the output to fit the video element.
+      google.colab.output.setIframeHeight(document.documentElement.scrollHeight, true);
+
+      // Wait for Capture to be clicked.
+      await new Promise((resolve) => capture.onclick = resolve);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      stream.getVideoTracks()[0].stop();
+      div.remove();
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+    ''')
+    display(js)
+    data = eval_js('takePhoto({})'.format(quality))
+    binary = b64decode(data.split(',')[1])
+
+
+    image = PIL_Image.open(io.BytesIO(binary))
+    image_np = np.array(image)
+    return image_np
+else:
+  def take_photo(filename='photo.jpg', quality=0.8):
+    cam = cv2.VideoCapture(0)
+
+    cv2.namedWindow("test")
+
+    img_counter = 0
+
+    while True:
+      ret, frame = cam.read()
+      # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
+      if not ret:
+        print("failed to grab frame")
+        break
+      cv2.imshow("test", frame)
+
+      k = cv2.waitKey(1)
+      if k%256 == 27 or k%256 == 32 :
+        # ESC pressed
+        break
+
+    cam.release()
+
+    cv2.destroyAllWindows()
+
+    # Preprocess image
+    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # Flip image for 3rd person view
+    img = cv2.flip(img, 1)
+
+    # To improve performance, optionally mark image as not writeable to pass by reference
+    img.flags.writeable = False
+
+    return img
 
 
